@@ -1,8 +1,9 @@
 from setuptools import setup
+import ipgw
 
 setup(
         name='ipgw',
-        version='0.3.3',
+        version=ipgw.__version__,
         packages=['ipgw'],
         install_requires=['requests'],
         author='John Jiang',
@@ -39,5 +40,4 @@ setup(
             # that you indicate whether you support Python 2, Python 3 or both.
             'Programming Language :: Python :: 3.5',
         ],
-
 )

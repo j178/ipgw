@@ -2,8 +2,6 @@
 # Author: John Jiang
 # Date  : 2016/7/1
 
-# 开机自动登陆，关机自动退出脚本
-# todo 通过「校园统一身份认证SSO」修改任何人的校园网密码
 import json
 import os
 import re
