@@ -1,58 +1,71 @@
-import re
+# auto_logout意思是只断开当前登录的设备
+import requests
 import logging
 
-import requests
-from PIL import Image
-from io import BytesIO
+import sys
 
-session = requests.session()
+from _ipgw.ipgw.ipgw import IPGW
+
 logging.basicConfig(level=logging.DEBUG)
 
-login_url = 'http://ipgw.neu.edu.cn:8800/'
-capcha_url = 'http://ipgw.neu.edu.cn:8800/site/captcha'
+
+def logout_current(device, ip=None):
+    url = {
+        'phone': 'https://ipgw.neu.edu.cn/srun_portal_phone.php',
+        'pc'   : 'https://ipgw.neu.edu.cn/srun_portal_pc.php'
+    }[device]
+
+    data = {
+        'action' : 'auto_logout',
+        'user_ip': ip
+    }
+    r = requests.post(url, data=data)
+    r.encoding = 'utf-8'
+
+    if device == 'phone' and '注销成功！' in r.text:
+        logging.info('Log phone out successfully')
+
+    with open('tmp.html', 'w') as f:
+        f.write(r.text)
 
 
-def login(username, password):
-    r = session.get(login_url)
-    try:
-        r.raise_for_status()
-    except requests.HTTPError as e:
-        logging.exception(e)
-        return
-    csrf = re.search(r'<input type="hidden" name="_csrf".*?value="(.*?)">', r.text).group(1)
-
-    tried_again = False
-    while True:
-        captcha = get_captcha(tried_again)
-        tried_again = True
-        data = {
-            '_csrf'                : csrf,
-            'LoginForm[username]:' : username,
-            'LoginForm[password]'  : password,
-            'LoginForm[verifyCode]': captcha
-        }
-
-        r = session.post(login_url, data=data)
-        # 登录成功
-        if '/home/base/index' in r.url:
-            logging.info('登录成功')
-            return r.text
-
-        logging.error('登录失败')
+def get_online_info():
+    url = 'https://ipgw.neu.edu.cn/include/auth_action.php'
+    r = requests.post(url, data={'action': 'get_online_info'})
+    if r.text == 'not_online':
+        print('You are offline')
+    else:
+        print(r.text)
 
 
-def get_captcha(refresh=False):
-    param = {'refresh': '1'} if refresh else {}
-    r = session.get(capcha_url, params=param)
-    if r.status_code == 200:
-        logging.debug('获取验证码成功')
-        img = Image.open(BytesIO(r.content))
-        img.show()
-        return input('请输入验证码>').strip()
-    logging.error('获取验证码失败')
+def logout_all(device, username=None, password=None):
+    url = {
+        'phone': 'https://ipgw.neu.edu.cn/srun_portal_phone.php',
+        'pc'   : 'https://ipgw.neu.edu.cn/include/auth_action.php'
+    }[device]
+
+    data = {
+        'action'  : 'logout',
+        'username': username,
+        'password': password
+    }
+
+    if device == 'phone':
+        data.update({'user_ip': '219.216.65.201'})
+
+    r = requests.post(url, data=data)
+    r.encoding = 'utf-8'
+    with open('tmp.html', 'w') as f:
+        f.write(r.text)
+
+
+def test_login():
+    ipgw = IPGW(sys.argv[1], sys.argv[2])
+    ipgw.login()
 
 
 if __name__ == '__main__':
-    import sys
-
-    print(login(sys.argv[1], sys.argv[2]))
+    # logout_current('phone', '118.202.12.104')
+    # logout_all('phone')
+    # get_online_info()
+    test_login()

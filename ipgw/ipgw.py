@@ -1,20 +1,20 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+# ! encoding=utf8
+
 # Author: John Jiang
 # Date  : 2016/7/1
-
+from __future__ import unicode_literals, print_function
 import json
 import os
 import re
 import sys
 import time
 
+import logging
 import requests
 
 RECORD_SIZE = 30
-RECORD_INTERVAL = 3600 if not os.environ.get('DEBUG') else 0
-
-PAGE_URL = 'https://ipgw.neu.edu.cn/srun_portal_pc.php'
-AJAX_URL = 'https://ipgw.neu.edu.cn/include/auth_action.php'
+RECORD_INTERVAL = 3600
 
 ATTRIBUTES = {
     'bold'     : 1,
@@ -48,12 +48,6 @@ COLORS = {
 }
 RESET = '\033[0m'
 
-s = requests.Session()
-# 网管系统使用UA来判断登录的设备，最多允许同时有两个不同的UA登录
-# 当有第三个UA尝试登录时，返回'E2620: You are already online.(已经在线了)'
-s.headers['User-Agent'] = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                           'Chrome/56.0.2924.87 Safari/537.36')
-
 
 def cprint(text, color=None, on_color=None, attrs=None, **kwargs):
     fmt_str = '\033[%dm%s'
@@ -79,78 +73,133 @@ def size_fmt(num, suffix='B'):
     return "%.1f %s%s" % (num, 'Y', suffix)
 
 
-def login(username, password):
-    """
-    登陆IP网关并获取网络使用情况
+class IPGWError(ConnectionError):
+    def __init__(self, why):
+        self.why = why
 
-    :param str username: 学号
-    :param str password: 密码
-    :returns bool|str 登陆成功返回 True, 否则为错误消息
-    """
+    def __str__(self):
+        return self.why
 
-    def parse(text):
-        info = text.split(',')
-        return {
-            'user'    : username,
-            'usedflow': float(info[0]),
-            'duration': float(info[1]),
-            'time'    : int(time.time()),
-            'balance' : float(info[2]),
-            'ip'      : info[5]
+
+class TwoDevicesOnline(IPGWError):
+    def __init__(self, why):
+        super(TwoDevicesOnline, self).__init__(why)
+
+
+logger = logging.getLogger(__name__)
+
+
+def setup_logger():
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(logging.StreamHandler())
+
+
+class IPGW:
+    PC_PAGE_URL = 'https://ipgw.neu.edu.cn/srun_portal_pc.php'
+    PC_AJAX_URL = 'https://ipgw.neu.edu.cn/include/auth_action.php'
+    PHONE_URL = 'https://ipgw.neu.edu.cn/srun_portal_phone.php'
+    PC_UA = {'User-Agent': ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                            'Chrome/56.0.2924.87 Safari/537.36')}
+    PHONE_UA = {'User-Agent': (
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) '
+        'Version/9.0 Mobile/13B143 Safari/601.1')}
+    session = requests.session()
+
+    def __init__(self, username=None, password=None):
+        self.username = username
+        self.password = password
+
+    @classmethod
+    def _request(cls, method, *args, **kwargs):
+        while True:
+            r = cls.session.request(method, *args, **kwargs)
+            # todo
+            if 'Portal not response' in r.text:
+                logger.error('Portal not response, trying again')
+                time.sleep(1)
+                continue
+            return r
+
+    def login(self):
+        """
+        登陆IP网关并获取网络使用情况
+        """
+        data = {
+            'action'  : 'login',
+            'username': self.username,
+            'password': self.password
+        }
+        alrealy_logged_error = 'E2620: You are already online.(已经在线了)'
+
+        # 不需要cookie，服务器根据请求的IP来获取登录的用户的信息
+        text = self._request('POST', self.PC_PAGE_URL, data=data, headers=self.PC_UA).text
+
+        if alrealy_logged_error in text:
+            # 尝试以手机端登录
+            logger.error('你已经在线了，正在尝试以手机登录')
+            text = self._request('POST', self.PC_PAGE_URL, data=data, headers=self.PHONE_UA).text
+            if alrealy_logged_error in text:
+                raise TwoDevicesOnline('你已有两台设备在线')
+
+        if '网络已连接' not in text:
+            match = re.search(r'<input.*?name="url".*?<p>(.*?)</p>', text, re.DOTALL)
+            why = match.group(1) if match else 'Unknown Reason'
+            logger.error('连接出错 %s', why)
+            raise IPGWError(why)
+
+        info = self.get_online_info()
+        if not info:
+            raise IPGWError('网络出错，请稍候重试')
+
+        return info
+
+    def get_online_info(self):
+        r = self._request('POST', self.PC_AJAX_URL, data={'action': 'get_online_info'})
+        # 如果未登录，则返回 not_online
+        if 'not_online' not in r.text:
+            info = r.text.split(',')
+            return {
+                'user'    : self.username,
+                'usedflow': float(info[0]),
+                'duration': float(info[1]),
+                'time'    : int(time.time()),
+                'balance' : float(info[2]),
+                'ip'      : info[5]
+            }
+
+    def logout_all(self):
+        """
+        注销此帐号的所有登录
+        """
+        data = {
+            'action'  : 'logout',
+            'username': self.username,
+            'password': self.password,
         }
 
-    data = {
-        'action'  : 'login',
-        'ac_id'   : 1,
-        'username': username,
-        'password': password
-    }
+        r = self._request('POST', self.PC_AJAX_URL, data)
+        r.encoding = 'utf-8'
+        return '网络已断开' in r.text
 
-    # 不需要cookie，服务器根据请求的IP来获取登录的用户的信息
-    r = s.post(PAGE_URL, data)
+    def logout_current(self, user_ip=None):
+        # 网页登录之后的注销按钮，只退出当前IP
+        # 特殊用法：使用user_ip使任意IP下线
+        data = {
+            'action' : 'auto_logout',
+            'user_ip': user_ip
+        }
+        r = self._request('POST', self.PC_PAGE_URL, data)
+        r.encoding = 'utf-8'
+        if '网络已断开' not in r.text:
+            match = re.search(r'<td height="40" style="font-weight:bold;color:orange;">(.*?)</td>', r.text, re.DOTALL)
+            if match:
+                raise IPGWError(match.group(1).strip())
+        return True
 
-    if '网络已连接' in r.text:
-        # 如果未登录，则返回 not_online
-        r = s.post(AJAX_URL, data={'action': 'get_online_info'})
-        info = parse(r.text)
-        track(info)
-        display(info)
-    else:
-        match = re.search(r'<input.*?name="url".*?<p>(.*?)</p>', r.text, re.DOTALL)
-        why = match.group(1) if match else 'Unknown Reason'
-        raise requests.ConnectionError(why)
-
-
-def logout_all(username, password=''):
-    """
-    登出IP网关
-    因为一个账号可以在多个IP处登陆，所以一个账号对应多个IP
-    '断开连接'的意思是，将当前IP从连接中断开, '断开全部链接'是指将当前账号对应的所有IP都断开。
-    在管理页面的'下线'功能也是将IP断开。
-    <del>移动页面的'注销'是指'断开所有链接', 即将账号对应的所有链接都断开。</del>
-    :param str username:
-    :param password: 断开全部链接时需要
-    """
-    data = {
-        'action'  : 'logout',
-        'username': username,
-        'password': password,
-        'ajax'    : '1'
-    }
-
-    r = s.post(AJAX_URL, data)
-    r.encoding = 'utf-8'
-    cprint(r.text, color='cyan')
-
-
-def logout_current(*args):
-    # 网页登录之后的注销按钮，只退出当前IP
-    data = {
-        'action': 'auto_logout',
-        # 'info'   : '',
-        # 'user_ip': '118.202.11.141'
-    }
-    s.post(PAGE_URL, data)
+    @classmethod
+    def is_online(cls):
+        r = cls._request('POST', cls.PC_AJAX_URL, data={'action': 'get_online_info'})
+        return 'not_online' not in r.text
 
 
 def track(info):
@@ -189,16 +238,6 @@ def track(info):
     info['newused'] = newused if newused >= 0 else 0
 
 
-def is_online():
-    r = s.post(AJAX_URL, data={'action': 'get_online_info'})
-    if 'not_online' in r.text:
-        cprint('You are offline', color='red')
-        return False
-
-    cprint('You are online', color='green')
-    return True
-
-
 def display(info):
     info['usedflow'] = size_fmt(info['usedflow'])
     info['duration'] = '{:.2f} H'.format(info['duration'] / 3600)
@@ -220,7 +259,7 @@ def display(info):
         info['record'] = '\nIn past {period} used {newused}'.format(period=period, newused=newused)
     else:
         info['record'] = ''
-    print(msg.format(**info, width=width, pad=''), end='')
+    print(msg.format(width=width, pad='', **info), end='')
 
 
 def usage():
@@ -232,7 +271,9 @@ def usage():
     msg.append('  -o, --logout    logout from IP gateway')
     msg.append('  -f, --force     force login(logout first and then login again)')
     msg.append('  -t, --test      test is online')
-    msg.append('  student_id      your student id to login, explicitly pass or read from IPGW_ID environment variable')
+    msg.append('  -y, --yes       answer yes to all question')
+    msg.append(
+            '  student_id      your student id to login, explicitly pass or read from IPGW_ID environment variable')
     msg.append('  password        your password, explicitly pass or read from IPGW_PW environment variable')
     msg.append('\nWritten by johnj.(https://github.com/j178)')
     print('\n'.join(msg))
@@ -242,13 +283,18 @@ def usage():
 def run():
     is_logout = False
     force_login = False
+    answer_yes = False
 
     if '-h' in sys.argv or '--help' in sys.argv:
         usage()
 
     if '-t' in sys.argv or '--test' in sys.argv:
-        is_online()
-        return
+        if IPGW.is_online():
+            cprint('你已经连接好啦!', color='green')
+            return True
+        else:
+            cprint('你当前没有连接到网络!', color='red')
+            return False
 
     if '-o' in sys.argv or '--logout' in sys.argv:
         args = [x for x in sys.argv[1:] if (x != '-o' and x != '--logout')]
@@ -259,6 +305,9 @@ def run():
     if '-f' in args or '--force' in args:
         args = [x for x in args if (x != '-f' and x != '--force')]
         force_login = True
+    if '-y' in args or '--yes' in args:
+        args = [x for x in args if (x != '-f' and x != '--yes')]
+        answer_yes = True
 
     if len(args) >= 2:
         args = args[:2]
@@ -268,31 +317,53 @@ def run():
         except KeyError:
             usage()
 
+    ipgw = IPGW(*args)
     if is_logout:
-        return logout_current(*args)
+        try:
+            ipgw.logout_current()
+            cprint('网络已断开', color='green')
+            return True
+        except IPGWError as e:
+            cprint(e, color='red')
+            return False
+
     if force_login:
-        logout_all(*args)
-        return login(*args)
+        ipgw.logout_all()
+        cprint('网络已断开，正在重新登录...', color='green')
 
     # 没有提供选项参数, 则默认为连接网络
     while True:
         try:
-            return login(*args)
+            info = ipgw.login()
+            track(info)
+            display(info)
+            return True
         except requests.ConnectionError as e:
             cprint(e, color='red')
-            cprint('是否断开全部链接并重新连接(y/n)?', color='magenta', end=' ')
-            if input().lower().strip() != 'n':
-                logout_all(*args)
+            return False
+        except TwoDevicesOnline as e:
+            cprint(e, color='red')
+            cprint('是否注销全部连接并重新登录(y/n)?', color='magenta', end=' ')
+            if answer_yes or input().lower().strip() != 'n':
+                ipgw.logout_all()
+                continue
+            return False
+        except IPGWError as e:
+            cprint(e, color='red')
+            cprint('是否重试(y/n)?', color='magenta', end=' ')
+            if answer_yes or input().lower().strip() != 'n':
+                continue
             else:
                 break
 
 
 def main():
     try:
-        run()
+        return run()
     except KeyboardInterrupt:
         cprint('\nStopped.', 'green')
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
