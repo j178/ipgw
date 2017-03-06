@@ -4,6 +4,12 @@
 # Author: John Jiang
 # Date  : 2016/7/1
 from __future__ import unicode_literals, print_function
+
+try:
+    from __builtins__ import ConnectionError
+except ImportError:
+    class ConnectionError(IOError):
+        pass
 import json
 import os
 import re
@@ -284,6 +290,7 @@ def run():
     is_logout = False
     force_login = False
     answer_yes = False
+    logout_ip = None
 
     if '-h' in sys.argv or '--help' in sys.argv:
         usage()
@@ -297,8 +304,20 @@ def run():
             return False
 
     if '-o' in sys.argv or '--logout' in sys.argv:
-        args = [x for x in sys.argv[1:] if (x != '-o' and x != '--logout')]
         is_logout = True
+        if '-o' in sys.argv:
+            option = '-o'
+        else:
+            option = '--logout'
+        index = sys.argv.index(option) + 1
+        try:
+            ip = sys.argv[index]
+            if ip and not ip.startswith('-'):
+                logout_ip = ip
+                sys.argv.pop(index)
+        except IndexError:
+            pass
+        args = [x for x in sys.argv[1:] if (x != '-o' and x != '--logout')]
     else:
         args = sys.argv[1:]
 
@@ -320,7 +339,7 @@ def run():
     ipgw = IPGW(*args)
     if is_logout:
         try:
-            ipgw.logout_current()
+            ipgw.logout_current(logout_ip)
             cprint('网络已断开', color='green')
             return True
         except IPGWError as e:
@@ -359,7 +378,7 @@ def run():
 
 def main():
     try:
-        return run()
+        return not run()
     except KeyboardInterrupt:
         cprint('\nStopped.', 'green')
         return 1
