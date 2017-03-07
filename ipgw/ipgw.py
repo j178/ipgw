@@ -109,6 +109,10 @@ class IPGW:
     PHONE_UA = {'User-Agent': (
         'Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) '
         'Version/9.0 Mobile/13B143 Safari/601.1')}
+    USER_AGENT = {
+        'pc'   : PC_UA,
+        'phone': PHONE_UA
+    }
     session = requests.session()
 
     def __init__(self, username=None, password=None):
@@ -126,7 +130,7 @@ class IPGW:
                 continue
             return r
 
-    def login(self):
+    def login(self, login_as='pc'):
         """
         登陆IP网关并获取网络使用情况
         """
@@ -138,14 +142,19 @@ class IPGW:
         alrealy_logged_error = 'E2620: You are already online.(已经在线了)'
 
         # 不需要cookie，服务器根据请求的IP来获取登录的用户的信息
-        text = self._request('POST', self.PC_PAGE_URL, data=data, headers=self.PC_UA).text
+        ua = self.USER_AGENT[login_as]
+        text = self._request('POST', self.PC_PAGE_URL, data=data, headers=ua).text
 
         if alrealy_logged_error in text:
             # 尝试以手机端登录
-            logger.error('你已经在线了，正在尝试以手机登录')
-            text = self._request('POST', self.PC_PAGE_URL, data=data, headers=self.PHONE_UA).text
+            logger.error('当前帐号已经其他%s上登录了，正在尝试以%s登录...',
+                         '电脑' if login_as == 'pc' else '手机',
+                         '手机' if login_as == 'pc' else '电脑')
+
+            other_ua = self.USER_AGENT[(self.USER_AGENT.keys() - login_as).pop()]
+            text = self._request('POST', self.PC_PAGE_URL, data=data, headers=other_ua).text
             if alrealy_logged_error in text:
-                raise TwoDevicesOnline('你已有两台设备在线')
+                raise TwoDevicesOnline('以%s登录失败，你已有两台设备在线!' % '手机' if login_as == 'pc' else '电脑')
 
         if '网络已连接' not in text:
             match = re.search(r'<input.*?name="url".*?<p>(.*?)</p>', text, re.DOTALL)
@@ -181,9 +190,10 @@ class IPGW:
             'action'  : 'logout',
             'username': self.username,
             'password': self.password,
+            'ajax'    : '1'
         }
 
-        r = self._request('POST', self.PC_AJAX_URL, data)
+        r = self._request('POST', self.PC_AJAX_URL, data=data)
         r.encoding = 'utf-8'
         return '网络已断开' in r.text
 
@@ -194,7 +204,7 @@ class IPGW:
             'action' : 'auto_logout',
             'user_ip': user_ip
         }
-        r = self._request('POST', self.PC_PAGE_URL, data)
+        r = self._request('POST', self.PC_PAGE_URL, data=data)
         r.encoding = 'utf-8'
         if '网络已断开' not in r.text:
             match = re.search(r'<td height="40" style="font-weight:bold;color:orange;">(.*?)</td>', r.text, re.DOTALL)
@@ -252,7 +262,7 @@ def display(info):
     msg = '''\
 +-----------+--{pad:-<{width}}-+
 | User      |  {user:<{width}} |
-| Used Flow |  {usedflow:<{width}} |
+| Used Data |  {usedflow:<{width}} |
 | Used Time |  {duration:<{width}} |
 | Balance   |  {balance:<{width}} |
 | IP        |  {ip:<{width}} |
@@ -274,6 +284,8 @@ def usage():
     msg.append('\nA script to login/logout your school IP gateway(ipgw.neu.edu.cn)')
     msg.append('\noptional arguments:')
     msg.append('  -h, --help      show this help message')
+    msg.append('  -pc,            login as pc(default action)')
+    msg.append('  -phone,         login as phone(when you know you are already online in other computer)')
     msg.append('  -o, --logout    logout from IP gateway')
     msg.append('  -f, --force     force login(logout first and then login again)')
     msg.append('  -t, --test      test is online')
@@ -283,97 +295,107 @@ def usage():
     msg.append('  password        your password, explicitly pass or read from IPGW_PW environment variable')
     msg.append('\nWritten by johnj.(https://github.com/j178)')
     print('\n'.join(msg))
-    sys.exit()
 
 
-def run():
-    is_logout = False
-    force_login = False
-    answer_yes = False
-    logout_ip = None
+def parse_args(argv):
+    args = {}
+    argv = argv[1:]
+    args['login_as'] = 'pc'
 
-    if '-h' in sys.argv or '--help' in sys.argv:
-        usage()
+    if '-h' in argv or '--help' in argv:
+        args['help'] = True
+        argv = [x for x in argv if x != '-h' and x != '--help']
 
-    if '-t' in sys.argv or '--test' in sys.argv:
-        if IPGW.is_online():
-            cprint('你已经连接好啦!', color='green')
-            return True
-        else:
-            cprint('你当前没有连接到网络!', color='red')
-            return False
+    if '-t' in argv or '--test' in argv:
+        args['test'] = True
+        argv = [x for x in argv if x != '-t' and x != '--test']
 
-    if '-o' in sys.argv or '--logout' in sys.argv:
-        is_logout = True
-        if '-o' in sys.argv:
+    if '-o' in argv or '--logout' in argv:
+        args['is_logout'] = True
+        if '-o' in argv:
             option = '-o'
         else:
             option = '--logout'
-        index = sys.argv.index(option) + 1
+        index = argv.index(option) + 1
         try:
-            ip = sys.argv[index]
+            ip = argv[index]
             if ip and not ip.startswith('-'):
-                logout_ip = ip
-                sys.argv.pop(index)
+                args['logout_ip'] = ip
+                argv.pop(index)
         except IndexError:
             pass
-        args = [x for x in sys.argv[1:] if (x != '-o' and x != '--logout')]
+        argv = [x for x in argv if (x != '-o' and x != '--logout')]
+
+    if '-pc' in argv:
+        args['login_as'] = 'pc'
+    if '-phone' in argv:
+        args['login_as'] = 'phone'
+    argv = [x for x in argv if x != '-pc' and x != '-phone']
+
+    if '-f' in argv or '--force' in argv:
+        args['force_login'] = True
+        argv = [x for x in argv if (x != '-f' and x != '--force')]
+    if '-y' in argv or '--yes' in argv:
+        args['answer_yes'] = True
+        argv = [x for x in argv if (x != '-y' and x != '--yes')]
+
+    if len(argv) >= 2:
+        argv = argv[:2]
     else:
-        args = sys.argv[1:]
+        argv = os.getenv('IPGW_ID'), os.getenv('IPGW_PW')
+    args['username'], args['password'] = argv
+    return args
 
-    if '-f' in args or '--force' in args:
-        args = [x for x in args if (x != '-f' and x != '--force')]
-        force_login = True
-    if '-y' in args or '--yes' in args:
-        args = [x for x in args if (x != '-f' and x != '--yes')]
-        answer_yes = True
 
-    if len(args) >= 2:
-        args = args[:2]
-    else:
-        try:
-            args = os.environ['IPGW_ID'], os.environ['IPGW_PW']
-        except KeyError:
-            usage()
-
-    ipgw = IPGW(*args)
-    if is_logout:
-        try:
-            ipgw.logout_current(logout_ip)
-            cprint('网络已断开', color='green')
-            return True
-        except IPGWError as e:
-            cprint(e, color='red')
-            return False
-
-    if force_login:
-        ipgw.logout_all()
-        cprint('网络已断开，正在重新登录...', color='green')
-
+def run():
+    args = parse_args(sys.argv)
+    if args.get('help'):
+        usage()
+        return True
+    ipgw = IPGW(args['username'], args['password'])
     # 没有提供选项参数, 则默认为连接网络
     while True:
         try:
-            info = ipgw.login()
+            if args.get('test'):
+                if IPGW.is_online():
+                    cprint('你已经连接好啦!', color='green')
+                    return True
+                else:
+                    cprint('你当前没有连接到网络!', color='red')
+                    return False
+            if args.get('is_logout'):
+                ipgw.logout_current(args.get('logout_ip'))
+                cprint('网络已断开', 'green')
+                return True
+            if args.get('force_login'):
+                ipgw.logout_all()
+                cprint('网络已断开，正在重新登录...', color='green')
+
+            info = ipgw.login(args.get('login_as'))
             track(info)
             display(info)
             return True
-        except requests.ConnectionError as e:
-            cprint(e, color='red')
+        except requests.ConnectionError:
+            cprint('您的网络出了问题', color='red')
             return False
         except TwoDevicesOnline as e:
             cprint(e, color='red')
             cprint('是否注销全部连接并重新登录(y/n)?', color='magenta', end=' ')
-            if answer_yes or input().lower().strip() != 'n':
-                ipgw.logout_all()
-                continue
-            return False
+            if args.get('answer_yes') or input().lower().strip() != 'n':
+                if ipgw.logout_all():
+                    cprint('注销全部成功', 'green')
+                else:
+                    cprint('注销失败', 'red')
+                    return False
+            else:
+                return False
         except IPGWError as e:
             cprint(e, color='red')
             cprint('是否重试(y/n)?', color='magenta', end=' ')
-            if answer_yes or input().lower().strip() != 'n':
+            if args.get('answer_yes') or input().lower().strip() != 'n':
                 continue
             else:
-                break
+                return False
 
 
 def main():
