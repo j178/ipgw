@@ -1,6 +1,6 @@
 ## NEU IPGW 命令行工具
 
-![效果截图](_image/15.png)
+![效果截图](_image/demo.png)
 
 ### 安装
 
@@ -24,8 +24,9 @@ pip install ipgw
     export IPGW_PW=<your_password>
     ```
 
-2. `ipgw -o <id> <password>`  
-    退出网关。同样，如果设置了`IPGW_ID`和`IPGW_PW`变量则可省略参数。
+2. `ipgw -o`  
+    退出网关。
+    > **彩蛋**: 这个 `-o` 选项是可以接受参数的哦，你猜参数是什么？ :stuck_out_tongue_winking_eye:
 
 3. `ipgw -t`  
     测试当前电脑是否联网。
@@ -35,8 +36,7 @@ pip install ipgw
 
 ### TODO
 - [x] 查看流量使用记录
-- [x] 兼容Python2
-- [x] 添加log与错误报警机制
+- [x] 添加 log 与错误报警机制
 - [x] 自动化运行，去除人工输入部分
 - [ ] 查看当前在线设备
 - [ ] 打包exe

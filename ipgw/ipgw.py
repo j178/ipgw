@@ -1,15 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # ! encoding=utf8
 
 # Author: John Jiang
 # Date  : 2016/7/1
-from __future__ import unicode_literals, print_function
 
-try:
-    from __builtins__ import ConnectionError
-except ImportError:
-    class ConnectionError(IOError):
-        pass
 import json
 import os
 import re
@@ -236,10 +230,10 @@ def track(info):
             return
 
     if user in data:
-        last = data[user][-1]
         # 缩小文件体积，只记录最新的十条记录
         if len(data[user]) > RECORD_SIZE:
             data[user] = data[user][-RECORD_SIZE:]
+        last = data[user][-1]
         # 如果间距小于x，则不记录
         if info['time'] - last['time'] < RECORD_INTERVAL:
             return
