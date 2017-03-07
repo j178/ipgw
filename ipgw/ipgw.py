@@ -282,6 +282,7 @@ def usage():
     msg.append('  -pc,            login as pc(default action)')
     msg.append('  -phone,         login as phone(when you know you are already online in other computer)')
     msg.append('  -o, --logout    logout from IP gateway')
+    msg.append('  -a, --logout-all logout all connected IP of this account')
     msg.append('  -f, --force     force login(logout first and then login again)')
     msg.append('  -t, --test      test is online')
     msg.append('  -y, --yes       answer yes to all question')
@@ -305,8 +306,12 @@ def parse_args(argv):
         args['test'] = True
         argv = [x for x in argv if x != '-t' and x != '--test']
 
+    if '-a' in argv or '--logout-all' in argv:
+        args['logout_all'] = True
+        argv = [x for x in argv if x != '-a' and x != '--logout-all']
+
     if '-o' in argv or '--logout' in argv:
-        args['is_logout'] = True
+        args['logout'] = True
         if '-o' in argv:
             option = '-o'
         else:
@@ -358,8 +363,12 @@ def run():
                 else:
                     cprint('你当前没有连接到网络!', color='red')
                     return False
-            if args.get('is_logout'):
+            if args.get('logout'):
                 ipgw.logout_current(args.get('logout_ip'))
+                cprint('网络已断开', 'green')
+                return True
+            if args.get('logout_all'):
+                ipgw.logout_all()
                 cprint('网络已断开', 'green')
                 return True
             if args.get('force_login'):
