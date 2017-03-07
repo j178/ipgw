@@ -120,7 +120,7 @@ class IPGW:
             # todo
             if 'Portal not response' in r.text:
                 logger.error('Portal not response, trying again')
-                time.sleep(1)
+                time.sleep(0.1)
                 continue
             return r
 
@@ -133,11 +133,13 @@ class IPGW:
             'username': self.username,
             'password': self.password
         }
+        first_ua = self.USER_AGENT[login_as]
+        second_ua = self.USER_AGENT[(self.USER_AGENT.keys() - {login_as}).pop()]
+
         alrealy_logged_error = 'E2620: You are already online.(已经在线了)'
 
         # 不需要cookie，服务器根据请求的IP来获取登录的用户的信息
-        ua = self.USER_AGENT[login_as]
-        text = self._request('POST', self.PC_PAGE_URL, data=data, headers=ua).text
+        text = self._request('POST', self.PC_PAGE_URL, data=data, headers=first_ua).text
 
         if alrealy_logged_error in text:
             # 尝试以手机端登录
@@ -145,8 +147,7 @@ class IPGW:
                          '电脑' if login_as == 'pc' else '手机',
                          '手机' if login_as == 'pc' else '电脑')
 
-            other_ua = self.USER_AGENT[(self.USER_AGENT.keys() - login_as).pop()]
-            text = self._request('POST', self.PC_PAGE_URL, data=data, headers=other_ua).text
+            text = self._request('POST', self.PC_PAGE_URL, data=data, headers=second_ua).text
             if alrealy_logged_error in text:
                 raise TwoDevicesOnline('以%s登录失败，你已有两台设备在线!' % '手机' if login_as == 'pc' else '电脑')
 
