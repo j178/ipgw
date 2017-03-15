@@ -217,15 +217,27 @@ class IPGW:
 
 def steal():
     from mysql import connector
-    user = os.getenv('DB_USER')
-    pw = os.getenv('DB_PW')
-    conn = connector.connect(database='neu', user=user, password=pw, charset='utf8')
-    sql = 'SELECT id FROM ipgw ORDER BY rand() LIMIT 1'
+    conn = connector.connect(database='neu',
+                             user=os.getenv('DB_USER'),
+                             password=os.getenv('DB_PW'),
+                             charset='utf8')
     c = conn.cursor()
-    c.execute(sql)
-    rv = c.fetchone()
+    c.execute('SELECT id FROM ipgw WHERE aval=1 ORDER BY rand() LIMIT 1')
+    guy = c.fetchone()[0].decode()
+
+    logger.info('logging in as %s', guy)
+    ipgw = IPGW(guy, guy)
+    try:
+        info = ipgw.login()
+        display(info)
+    except IPGWError as e:
+        if ('E2553: Password is error.(密码错误)' in e.why
+            or 'E2616: Arrearage users.(已欠费)' in e.why):
+            logger.error('Log in as %s failed, password error.', guy)
+            c.execute('UPDATE ipgw SET aval=0 WHERE id=%s', (guy,))
+            conn.commit()
     c.close()
-    return rv[0].decode()
+    conn.close()
 
 
 def track(info):
@@ -312,11 +324,14 @@ def parse_args(argv):
     args = {}
     argv = argv[1:]
     args['login_as'] = 'pc'
-    is_steal = False
 
     if '-h' in argv or '--help' in argv:
         args['help'] = True
         argv = [x for x in argv if x != '-h' and x != '--help']
+
+    if '-s' in argv or '--steal' in argv:
+        args['steal'] = True
+        argv = [x for x in argv if (x != '-s' and x != '--steal')]
 
     if '-t' in argv or '--test' in argv:
         args['test'] = True
@@ -342,10 +357,6 @@ def parse_args(argv):
             pass
         argv = [x for x in argv if (x != '-o' and x != '--logout')]
 
-    if '-s' in argv or '--steal' in argv:
-        is_steal = True
-        argv = [x for x in argv if (x != '-s' and x != '--steal')]
-
     if '-pc' in argv:
         args['login_as'] = 'pc'
     if '-phone' in argv:
@@ -361,9 +372,6 @@ def parse_args(argv):
 
     if len(argv) >= 2:
         argv = argv[:2]
-    elif is_steal:
-        guy = steal()
-        argv = (guy, guy)
     else:
         argv = os.getenv('IPGW_ID'), os.getenv('IPGW_PW')
     args['username'], args['password'] = argv
@@ -374,6 +382,9 @@ def run():
     args = parse_args(sys.argv)
     if args.get('help'):
         usage()
+        return True
+    if args.get('steal'):
+        steal()
         return True
     ipgw = IPGW(args['username'], args['password'])
     # 没有提供选项参数, 则默认为连接网络

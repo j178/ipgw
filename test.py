@@ -81,5 +81,5 @@ if __name__ == '__main__':
     # logout_all('phone')
     # get_online_info()
     # test_login()
-    # test_steal()
-    test_parse_args()
+    test_steal()
+    # test_parse_args()
