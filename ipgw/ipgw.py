@@ -137,10 +137,10 @@ class IPGW:
         second_ua = self.USER_AGENT[(self.USER_AGENT.keys() - {login_as}).pop()]
 
         alrealy_logged_error = 'E2620: You are already online.(已经在线了)'
+        ip_logged_in = 'IP has been online, please logout'
 
         # 不需要cookie，服务器根据请求的IP来获取登录的用户的信息
         text = self._request('POST', self.PC_PAGE_URL, data=data, headers=first_ua).text
-
         if alrealy_logged_error in text:
             # 尝试以手机端登录
             logger.error('当前帐号已经其他%s上登录了，正在尝试以%s登录...',
@@ -150,8 +150,9 @@ class IPGW:
             text = self._request('POST', self.PC_PAGE_URL, data=data, headers=second_ua).text
             if alrealy_logged_error in text:
                 raise TwoDevicesOnline('以%s登录失败，你已有两台设备在线!' % '手机' if login_as == 'pc' else '电脑')
-
-        if '网络已连接' not in text:
+        # 网络已连接：初次连接，连接成功
+        # IP has been online：该IP已经在线
+        if ip_logged_in not in text and '网络已连接' not in text:
             match = re.search(r'<input.*?name="url".*?<p>(.*?)</p>', text, re.DOTALL)
             why = match.group(1) if match else 'Unknown Reason'
             logger.error('连接出错 %s', why)
@@ -166,8 +167,9 @@ class IPGW:
     def get_online_info(self):
         r = self._request('POST', self.PC_AJAX_URL, data={'action': 'get_online_info'})
         # 如果未登录，则返回 not_online
-        if 'not_online' not in r.text:
-            info = r.text.split(',')
+        text = r.content.decode('utf8').strip('\ufeff')
+        if 'not_online' not in text:
+            info = text.split(',')
             return {
                 'user'    : self.username,
                 'usedflow': float(info[0]),

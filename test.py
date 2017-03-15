@@ -32,10 +32,11 @@ def logout_current(device, ip=None):
 def get_online_info():
     url = 'https://ipgw.neu.edu.cn/include/auth_action.php'
     r = requests.post(url, data={'action': 'get_online_info'})
+    print(r.headers)
     if r.text == 'not_online':
         print('You are offline')
     else:
-        print(r.text)
+        print(r.content.decode('utf8').strip('\ufeff'))
 
 
 def logout_all(device, username=None, password=None):
@@ -61,7 +62,7 @@ def logout_all(device, username=None, password=None):
 
 def test_login():
     ipgw = IPGW(sys.argv[1], sys.argv[2])
-    ipgw.login()
+    print(ipgw.login())
 
 
 def test_parse_args():
@@ -74,5 +75,5 @@ if __name__ == '__main__':
     # logout_current('phone', '118.202.12.104')
     # logout_all('phone')
     # get_online_info()
-    # test_login()
-    test_parse_args()
+    test_login()
+    # test_parse_args()
