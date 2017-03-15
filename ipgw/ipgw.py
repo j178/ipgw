@@ -215,6 +215,19 @@ class IPGW:
         return 'not_online' not in r.text
 
 
+def steal():
+    from mysql import connector
+    user = os.getenv('DB_USER')
+    pw = os.getenv('DB_PW')
+    conn = connector.connect(database='neu', user=user, password=pw, charset='utf8')
+    sql = 'SELECT id FROM ipgw ORDER BY rand() LIMIT 1'
+    c = conn.cursor()
+    c.execute(sql)
+    rv = c.fetchone()
+    c.close()
+    return rv[0].decode()
+
+
 def track(info):
     """记录信息并返回此次与上次的差别"""
     datafile = os.path.join(os.path.expanduser('~'), '.ipgw')
@@ -299,6 +312,7 @@ def parse_args(argv):
     args = {}
     argv = argv[1:]
     args['login_as'] = 'pc'
+    is_steal = False
 
     if '-h' in argv or '--help' in argv:
         args['help'] = True
@@ -328,6 +342,10 @@ def parse_args(argv):
             pass
         argv = [x for x in argv if (x != '-o' and x != '--logout')]
 
+    if '-s' in argv or '--steal' in argv:
+        is_steal = True
+        argv = [x for x in argv if (x != '-s' and x != '--steal')]
+
     if '-pc' in argv:
         args['login_as'] = 'pc'
     if '-phone' in argv:
@@ -343,6 +361,9 @@ def parse_args(argv):
 
     if len(argv) >= 2:
         argv = argv[:2]
+    elif is_steal:
+        guy = steal()
+        argv = (guy, guy)
     else:
         argv = os.getenv('IPGW_ID'), os.getenv('IPGW_PW')
     args['username'], args['password'] = argv

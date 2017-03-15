@@ -4,7 +4,7 @@ import logging
 
 import sys
 
-from _ipgw.ipgw.ipgw import IPGW, parse_args
+from _ipgw.ipgw.ipgw import IPGW, parse_args, steal
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -65,15 +65,21 @@ def test_login():
     print(ipgw.login())
 
 
+def test_steal():
+    print(steal())
+
+
 def test_parse_args():
-    print(parse_args('file.py -o 123.1 -y -f jiang 222'.split()))
-    print(parse_args('file.py  -y -o'.split()))
-    print(parse_args('file.py -y -f -f -f -y'.split()))
+    # print(parse_args('file.py -o 123.1 -y -f jiang 222'.split()))
+    # print(parse_args('file.py  -y -o'.split()))
+    # print(parse_args('file.py -y -f -f -f -y'.split()))
+    print(parse_args('file.py -s'.split()))
 
 
 if __name__ == '__main__':
     # logout_current('phone', '118.202.12.104')
     # logout_all('phone')
     # get_online_info()
-    test_login()
-    # test_parse_args()
+    # test_login()
+    # test_steal()
+    test_parse_args()
