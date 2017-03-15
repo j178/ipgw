@@ -1,7 +1,6 @@
 # auto_logout意思是只断开当前登录的设备
 import requests
 import logging
-
 import sys
 
 from _ipgw.ipgw.ipgw import IPGW, parse_args, steal

@@ -224,6 +224,7 @@ def steal():
                              user=os.getenv('DB_USER'),
                              password=os.getenv('DB_PW'),
                              charset='utf8')
+    conn.autocommit = True
     c = conn.cursor()
     c.execute('SELECT id FROM ipgw WHERE aval=1 ORDER BY rand() LIMIT 1')
     guy = c.fetchone()[0].decode()
@@ -234,12 +235,17 @@ def steal():
         info = ipgw.login()
         c.execute('UPDATE ipgw SET balance=%s WHERE id=%s', (info['balance'], guy))
         display(info)
+        with open('~/.ipgw.now', 'w') as f:
+            f.write(guy)
+    except requests.ConnectionError:
+        logger.error('Network error')
+    except TwoDevicesOnline:
+        logger.error('Two devices online')
     except IPGWError as e:
         if ('E2553: Password is error.(密码错误)' in e.why
             or 'E2616: Arrearage users.(已欠费)' in e.why):
             logger.error('Log in as %s failed, password error.', guy)
             c.execute('UPDATE ipgw SET aval=0 WHERE id=%s', (guy,))
-            conn.commit()
     c.close()
     conn.close()
 
@@ -312,6 +318,7 @@ def usage():
     msg.append('  -h, --help      show this help message')
     msg.append('  -pc,            login as pc(default action)')
     msg.append('  -phone,         login as phone(when you know you are already online in other computer)')
+    msg.append('  -i, --info      get online info')
     msg.append('  -o, --logout    logout from IP gateway')
     msg.append('  -a, --logout-all logout all connected IP of this account')
     msg.append('  -f, --force     force login(logout first and then login again)')
@@ -340,6 +347,10 @@ def parse_args(argv):
     if '-t' in argv or '--test' in argv:
         args['test'] = True
         argv = [x for x in argv if x != '-t' and x != '--test']
+
+    if '-i' in argv or '--info' in argv:
+        args['info'] = True
+        argv = [x for x in argv if (x != '-i' and x != '--info')]
 
     if '-a' in argv or '--logout-all' in argv:
         args['logout_all'] = True
@@ -401,6 +412,10 @@ def run():
                 else:
                     cprint('你当前没有连接到网络!', color='red')
                     return False
+            if args.get('info'):
+                info = ipgw.get_online_info()
+                display(info)
+                return True
             if args.get('logout'):
                 ipgw.logout_current(args.get('logout_ip'))
                 cprint('网络已断开', 'green')
