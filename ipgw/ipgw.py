@@ -94,6 +94,9 @@ def setup_logger():
     logger.addHandler(logging.StreamHandler())
 
 
+setup_logger()
+
+
 class IPGW:
     PC_PAGE_URL = 'https://ipgw.neu.edu.cn/srun_portal_pc.php'
     PC_AJAX_URL = 'https://ipgw.neu.edu.cn/include/auth_action.php'
@@ -229,6 +232,7 @@ def steal():
     ipgw = IPGW(guy, guy)
     try:
         info = ipgw.login()
+        c.execute('UPDATE ipgw SET balance=%s WHERE id=%s', (info['balance'], guy))
         display(info)
     except IPGWError as e:
         if ('E2553: Password is error.(密码错误)' in e.why
