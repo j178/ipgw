@@ -98,8 +98,8 @@ setup_logger()
 
 
 class IPGW:
-    PC_PAGE_URL = 'https://ipgw.neu.edu.cn/srun_portal_pc.php'
-    PC_AJAX_URL = 'https://ipgw.neu.edu.cn/include/auth_action.php'
+    PC_PAGE_URL = 'http://ipgw.neu.edu.cn/srun_portal_pc.php'
+    PC_AJAX_URL = 'http://ipgw.neu.edu.cn/include/auth_action.php'
     PHONE_URL = 'https://ipgw.neu.edu.cn/srun_portal_phone.php'
     PC_UA = {'User-Agent': ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
                             'Chrome/56.0.2924.87 Safari/537.36')}
@@ -134,7 +134,8 @@ class IPGW:
         data = {
             'action'  : 'login',
             'username': self.username,
-            'password': self.password
+            'password': self.password,
+            'ac_id' : 1
         }
         first_ua = self.USER_AGENT[login_as]
         second_ua = self.USER_AGENT[(self.USER_AGENT.keys() - {login_as}).pop()]
@@ -155,7 +156,7 @@ class IPGW:
                 raise TwoDevicesOnline('以%s登录失败，你已有两台设备在线!' % '手机' if login_as == 'pc' else '电脑')
         # 网络已连接：初次连接，连接成功
         # IP has been online：该IP已经在线
-        if ip_logged_in not in text and '网络已连接' not in text:
+        if '网络已连接' not in text:
             match = re.search(r'<input.*?name="url".*?<p>(.*?)</p>', text, re.DOTALL)
             why = match.group(1) if match else 'Unknown Reason'
             logger.error('连接出错 %s', why)
@@ -218,36 +219,36 @@ class IPGW:
         return 'not_online' not in r.text
 
 
-def steal():
-    from mysql import connector
-    conn = connector.connect(database='neu',
-                             user=os.getenv('DB_USER'),
-                             password=os.getenv('DB_PW'),
-                             charset='utf8')
-    conn.autocommit = True
-    c = conn.cursor()
-    c.execute('SELECT id FROM ipgw WHERE aval=1 ORDER BY rand() LIMIT 1')
-    guy = c.fetchone()[0].decode()
-
-    logger.info('logging in as %s', guy)
-    ipgw = IPGW(guy, guy)
-    try:
-        info = ipgw.login()
-        c.execute('UPDATE ipgw SET balance=%s WHERE id=%s', (info['balance'], guy))
-        display(info)
-        with open('~/.ipgw.now', 'w') as f:
-            f.write(guy)
-    except requests.ConnectionError:
-        logger.error('Network error')
-    except TwoDevicesOnline:
-        logger.error('Two devices online')
-    except IPGWError as e:
-        if ('E2553: Password is error.(密码错误)' in e.why
-            or 'E2616: Arrearage users.(已欠费)' in e.why):
-            logger.error('Log in as %s failed, password error.', guy)
-            c.execute('UPDATE ipgw SET aval=0 WHERE id=%s', (guy,))
-    c.close()
-    conn.close()
+# def steal():
+#     from mysql import connector
+#     conn = connector.connect(database='neu',
+#                              user=os.getenv('DB_USER'),
+#                              password=os.getenv('DB_PW'),
+#                              charset='utf8')
+#     conn.autocommit = True
+#     c = conn.cursor()
+#     c.execute('SELECT id FROM ipgw WHERE aval=1 ORDER BY rand() LIMIT 1')
+#     guy = c.fetchone()[0].decode()
+#
+#     logger.info('logging in as %s', guy)
+#     ipgw = IPGW(guy, guy)
+#     try:
+#         info = ipgw.login()
+#         c.execute('UPDATE ipgw SET balance=%s WHERE id=%s', (info['balance'], guy))
+#         display(info)
+#         with open('~/.ipgw.now', 'w') as f:
+#             f.write(guy)
+#     except requests.ConnectionError:
+#         logger.error('Network error')
+#     except TwoDevicesOnline:
+#         logger.error('Two devices online')
+#     except IPGWError as e:
+#         if ('E2553: Password is error.(密码错误)' in e.why
+#             or 'E2616: Arrearage users.(已欠费)' in e.why):
+#             logger.error('Log in as %s failed, password error.', guy)
+#             c.execute('UPDATE ipgw SET aval=0 WHERE id=%s', (guy,))
+#     c.close()
+#     conn.close()
 
 
 def track(info):
@@ -388,7 +389,9 @@ def parse_args(argv):
     if len(argv) >= 2:
         argv = argv[:2]
     else:
-        argv = os.getenv('IPGW_ID'), os.getenv('IPGW_PW')
+
+        # argv = os.getenv('IPGW_ID'), os.getenv('IPGW_PW')
+        argv ="20165352","CJ2572"
     args['username'], args['password'] = argv
     return args
 
@@ -399,7 +402,7 @@ def run():
         usage()
         return True
     if args.get('steal'):
-        steal()
+        # steal()
         return True
     ipgw = IPGW(args['username'], args['password'])
     # 没有提供选项参数, 则默认为连接网络
